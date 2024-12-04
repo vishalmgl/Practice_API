@@ -1,6 +1,9 @@
 ﻿using Microsoft.AspNetCore.Mvc;
-using Swashbuckle.AspNetCore.Annotations;
+using Microsoft.EntityFrameworkCore;
+using test2.Data;
 using test2.Model;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace test2.Controllers
 {
@@ -8,76 +11,91 @@ namespace test2.Controllers
     [ApiController]
     public class NameController : ControllerBase
     {
-        private static List<NameModel> names = new List<NameModel>();
+        private readonly AppDbContext _dbContext;
 
-        // Get all names with their ages
-        [HttpGet]
-        public IActionResult GetAll()
+        // Constructor to inject the DbContext
+        public NameController(AppDbContext dbContext)
         {
-            return Ok(names);
+            _dbContext = dbContext;
         }
 
-        // Add a new name with age
+        // Get all names with their ages and cities from the database
+        [HttpGet]
+        public async Task<IActionResult> GetAll()
+        {
+            var names = await _dbContext.Names.ToListAsync(); // Fetch all names from the database
+            return Ok(names); // Return the names as a response
+        }
+
+        // Add a new name with age and city
         [HttpPost]
-        public IActionResult AddName([FromBody] NameModel name)
+        public async Task<IActionResult> AddName([FromBody] NameModel name)
         {
             if (name == null || string.IsNullOrWhiteSpace(name.Name) || name.Age <= 0)
                 return BadRequest("Invalid name or age.");
 
-            name.Id = names.Count > 0 ? names.Max(n => n.Id) + 1 : 1;
-            names.Add(name);
-            return CreatedAtAction(nameof(GetById), new { id = name.Id }, name);
+            // Add the new name to the database
+            _dbContext.Names.Add(name);
+            await _dbContext.SaveChangesAsync();  // Save the changes to the database
+
+            return CreatedAtAction(nameof(GetById), new { id = name.Id }, name);  // Return the created name with the location
         }
 
         // Get a specific name by ID
         [HttpGet("{id}")]
-        public IActionResult GetById(int id)
+        public async Task<IActionResult> GetById(int id)
         {
-            var name = names.FirstOrDefault(n => n.Id == id);
+            var name = await _dbContext.Names.FindAsync(id); // Fetch the name by ID from the database
             if (name == null)
-                return NotFound("Name not found.");
+                return NotFound("Name not found."); // Return 404 if the name is not found
 
-            return Ok(name);
+            return Ok(name); // Return the name as a response
         }
 
-        // Update either the name or age
+        // Update name, age, or city by ID
         [HttpPut("{id}")]
-        [SwaggerOperation(Summary = "Update name or age", Description = "Only the fields provided in the request body will be updated. If no field is provided, it remains unchanged.")]
-        [SwaggerResponse(200, "Successfully updated", typeof(NameModel))]
-        [SwaggerResponse(404, "Name not found")]
-        public IActionResult UpdateName(int id, [FromBody] NameModel updatedName)
+        public async Task<IActionResult> UpdateName(int id, [FromBody] NameModel updatedName)
         {
-            // Find the existing name object by ID
-            var name = names.FirstOrDefault(n => n.Id == id);
+            var name = await _dbContext.Names.FindAsync(id); // Find the existing name by ID
             if (name == null)
-                return NotFound("Name not found.");
+                return NotFound("Name not found."); // Return 404 if the name is not found
 
-            // Update fields only if they are provided
-            if (updatedName.Name != "string")
+            // Update Name if it is provided and not a placeholder string (like "string")
+            if (!string.IsNullOrWhiteSpace(updatedName.Name) && updatedName.Name != "string")
             {
                 name.Name = updatedName.Name;
             }
+
+            // Update Age if it is a valid positive number
             if (updatedName.Age > 0)
             {
                 name.Age = updatedName.Age;
             }
 
-            // Return the updated object, which includes unchanged fields
-            return Ok(name);
+            // Update City if it is provided and not a placeholder string (like "string")
+            if (!string.IsNullOrWhiteSpace(updatedName.City) && updatedName.City != "string")
+            {
+                name.City = updatedName.City;
+            }
+
+            // Save the updated name to the database
+            await _dbContext.SaveChangesAsync();
+
+            return Ok(name); // Return the updated name
         }
-
-
 
         // Delete a name by ID
         [HttpDelete("{id}")]
-        public IActionResult DeleteName(int id)
+        public async Task<IActionResult> DeleteName(int id)
         {
-            var name = names.FirstOrDefault(n => n.Id == id);
+            var name = await _dbContext.Names.FindAsync(id); // Find the name by ID
             if (name == null)
-                return NotFound("Name not found.");
+                return NotFound("Name not found."); // Return 404 if the name is not found
 
-            names.Remove(name);
-            return NoContent();
+            _dbContext.Names.Remove(name); // Remove the name from the database
+            await _dbContext.SaveChangesAsync();  // Save the changes to the database
+
+            return NoContent(); // Return 204 No Content after successful deletion
         }
     }
 }
